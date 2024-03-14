@@ -19,33 +19,31 @@ app.config["MYSQL_CURSORCLASS"] = "DictCursor"
 
 mysql = MySQL(app)
 
-@app.route("/reset-db")
-def reset_db():
-	cur = mysql.connection.cursor()
-	cur.execute("DROP TABLE IF EXISTS enrollments")
-	cur.execute("DROP TABLE IF EXISTS students")
-	cur.execute("DROP TABLE IF EXISTS classes")
-	return {"msg": "Database Reset!"}
-    
 
 @app.route("/initialize-db")
 def initialize_db():
-    cur = mysql.connection.cursor()
-    # create a students table
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS students (id INT AUTO_INCREMENT PRIMARY KEY, email VARCHAR(255), full_name VARCHAR(255), gradYear INT)"
-    )
-    # create a classes table
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS classes (id INT AUTO_INCREMENT PRIMARY KEY, subject VARCHAR(255), section INT, semester VARCHAR(255), schoolYear INT, professor VARCHAR(255))"
-    )
-    # create a enrollments table
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS enrollments (id INT AUTO_INCREMENT PRIMARY KEY, student_id INT, class_id INT)"
-    )
-    mysql.connection.commit()
-    cur.close()
-    return {"msg": "Database Initialized!"}
+	cur = mysql.connection.cursor()
+	cur.execute(
+		"DROP TABLE IF EXISTS enrollments"
+	)
+	cur.execute(
+		"DROP TABLE IF EXISTS students"
+	)
+	cur.execute(
+		"DROP TABLE IF EXISTS classes"
+	)
+	cur.execute(
+		"CREATE TABLE IF NOT EXISTS students (id INT AUTO_INCREMENT PRIMARY KEY, email VARCHAR(255), full_name VARCHAR(255), gradYear INT)"
+	)
+	cur.execute(
+		"CREATE TABLE IF NOT EXISTS classes (id INT AUTO_INCREMENT PRIMARY KEY, subject VARCHAR(255), section INT, semester VARCHAR(255), schoolYear INT, professor VARCHAR(255))"
+	)
+	cur.execute(
+		"CREATE TABLE IF NOT EXISTS enrollments (id INT AUTO_INCREMENT PRIMARY KEY, student_id INT, class_id INT)"
+	)
+	mysql.connection.commit()
+	cur.close()
+	return {"msg": "Database Initialized!"}
 
 
 @app.route("/seed-db")
@@ -58,11 +56,11 @@ def seed_db():
     )
     cur.execute(
         "INSERT INTO students (email, full_name, gradYear) VALUES (%s, %s, %s)",
-        ("jane@csu.fullerton.edu", "Jane Smith", 2023),
+        ("jane@csu.fullerton.edu", "Jane Smith", 2022),
     )
     cur.execute(
         "INSERT INTO students (email, full_name, gradYear) VALUES (%s, %s, %s)",
-        ("jack@csu.fullerton.edu", "Jack Smith", 2023),
+        ("jack@csu.fullerton.edu", "Jack Smith", 2021),
     )
     # seed the classes table
     cur.execute(
@@ -108,16 +106,29 @@ def get_students_by_enrollments_in_classes(subject: str, class_number: str):
     return []+list(data)
 
 
-@app.route("/student/register")
+@app.route("/student/register", methods = ["POST"])
 def create_student():
-    cur = mysql.connection.cursor()
-    cur.execute(
-        "INSERT INTO students (email, full_name, gradYear) VALUES (%s, %s, %s)",
-        ("" + request.form["email"], "" + request.form["full_name"], 0),
-    )
-    mysql.connection.commit()
-    cur.close()
-    return {"msg": "Student Created!"}
+	try:
+		request_data = request.get_json()
+	except:
+		request_data = None
+	email = None
+	email = request_data.get("email")
+	name = None
+	name = request_data.get("name")
+	gradYear = None
+	gradYear = request_data.get("gradYear")
+	if request_data and email and name and gradYear:
+		cur = mysql.connection.cursor()
+		cur.execute(
+			"INSERT INTO students (email, full_name, gradYear) VALUES (%s, %s, %s)",
+			(email, name, gradYear),
+		)
+		mysql.connection.commit()
+		cur.close()
+		return {"msg": "Student Created!"}
+	else:
+		return{"msg": "Fields Missing!"}
 
 
 @app.route("/student/<string:email>/classes")
@@ -170,9 +181,12 @@ def class_drop(email: str, subject: str, class_number: str):
     return {"msg": "Class Dropped!"}
 
 
-@app.route("/student/search", methods=["POST"])
+@app.route("/student/search", methods=["GET", "POST"])
 def class_search():
-	request_data = request.get_json()
+	try:
+		request_data = request.get_json()
+	except:
+		request_data = None
 	email = None
 	name = None
 	gradYear = None
@@ -183,7 +197,7 @@ def class_search():
 	professor = None
 	sqlPrompt = "SELECT * FROM students s JOIN enrollments e ON s.id = e.student_id JOIN classes c ON e.class_id = c.id"
 	if request_data:
-		sqlPrompt += " WHERE e.id = e.id"
+		sqlPrompt += " WHERE e.id = e.id" #
 		email = request_data.get("email")
 		if email != None:
 			sqlPrompt += f" AND s.email = \"{email}\""
@@ -225,32 +239,33 @@ def get_classes():
     return {"classes": data}
 
 
-@app.route("/classes/<string:subject>", methods=["GET"])
-def get_classes_by_subject(subject: str):
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM classes WHERE subject = %s", (subject))
-    
-    data = cur.fetchall()
-    cur.close()
-    return {"classes": data}
-
-
-@app.route("/classes", methods=["POST"])
+@app.route("/classes/add", methods=["POST"])
 def create_class():
-    cur = mysql.connection.cursor()
-    cur.execute(
-        "INSERT INTO classes (subject, section, semester, schoolYear, professor) VALUES (%s, %s, %s, %s, %s)",
-        (
-            "" + request.form["subject"],
-            "" + request.form["section"],
-            "" + request.form["semester"],
-            "" + request.form["schoolYear"],
-            "" + request.form["professor"],
-        ),
-    )
-    mysql.connection.commit()
-    cur.close()
-    return {"msg": "Class Created!"}
+	try:
+		request_data = request.get_json()
+	except:
+		request_data = None
+	subject = None
+	subject =request_data.get("subject")
+	section = None
+	section = request_data.get("section")
+	semester = None
+	semester = request_data.get("semester")
+	schoolYear = None
+	schoolYear = request_data.get("schoolYear")
+	professor = None
+	professor = request_data.get("professor")
+	if request_data and subject and section and semester and schoolYear and professor:
+		cur = mysql.connection.cursor()
+		cur.execute(
+			"INSERT INTO classes (subject, section, semester, schoolYear, professor) VALUES (%s, %s, %s, %s, %s)",
+			(subject, section, semester, schoolYear, professor)
+		)
+		mysql.connection.commit()
+		cur.close()
+		return {"msg": "Class Created!"}
+	else: 
+		return {"msg": "Fields Missing!"}
 
 
 def main():
