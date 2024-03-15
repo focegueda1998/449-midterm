@@ -102,8 +102,6 @@ def seed_db():
 ###########################################
 # ? STUDENT CRUD
 ###########################################
-
-
 @app.route("/student", methods=["POST"])
 def create_student():
     fields = ["email", "full_name", "grad_year"]
@@ -160,7 +158,7 @@ def get_student(email: str):
 @app.route(
     "/student/subject/<string:subject>/class-number/<int:class_number>", methods=["GET"]
 )
-def get_students_by_enrollments_in_classes(subject: str, class_number: str):
+def get_students_by_enrollments_in_class(subject: str, class_number: str):
     cur = mysql.connection.cursor()
     # check if class exists
     cur.execute(
@@ -243,45 +241,60 @@ def delete_student(email: str):
     return res
 
 
-###########################################
+##########################################
 # ? CLASS CRUD
-###########################################
+##########################################
+@app.route("/class", methods=["POST"])
+def create_class():
+    fields = ["subject", "class_number", "semester", "school_year", "professor"]
+    for field in fields:
+        if field not in request.form:
+            return response({"msg": "Fields Missing!"}, 400)
+    subject = request.form["subject"]
+    class_number = request.form["class_number"]
+    semester = request.form["semester"]
+    school_year = request.form["school_year"]
+    professor = request.form["professor"]
 
+    # class number should be an int
+    try:
+        class_number = int(class_number)
+    except:
+        return response({"msg": "Class Number must be an integer!"}, 400)
 
-# ! use form data
-# @app.route("/class", methods=["POST"])
-# def create_class():
-#     try:
-#         request_data = request.get_json()
-#     except:
-#         request_data = None
-#     subject = request_data.get("subject", None)
-#     class_number = request_data.get("class_number", None)
-#     semester = request_data.get("semester", None)
-#     school_year = request_data.get("school_year", None)
-#     professor = request_data.get("professor", None)
-#     if (
-#         request_data
-#         and subject
-#         and class_number
-#         and semester
-#         and school_year
-#         and professor
-#     ):
-#         cur = mysql.connection.cursor()
-#         cur.execute(
-#             "INSERT INTO classes (subject, class_number, semester, school_year, professor) VALUES (%s, %s, %s, %s, %s)",
-#             (subject, class_number, semester, school_year, professor),
-#         )
-#         mysql.connection.commit()
-#         data = cur.execute(
-#             "SELECT * FROM classes WHERE "
-#         )
-#         cur.close()
-#         res = response({"msg": "Class Created!"}, 200)
-#     else:
-#         res = response({"msg": "Fields Missing!"}, 400)
-#     return res
+    # school year should be an int
+    try:
+        school_year = int(school_year)
+    except:
+        return response({"msg": "School Year must be an integer!"}, 400)
+
+    if subject and class_number and semester and school_year and professor:
+        cur = mysql.connection.cursor()
+        # check for existing class
+        cur.execute(
+            "SELECT * FROM classes WHERE subject = %s AND class_number = %s AND semester = %s AND school_year = %s AND professor = %s",
+            (subject, class_number, semester, school_year, professor),
+        )
+        data = cur.fetchone()
+        if data:
+            res = response({"msg": "A class with that information already exists"}, 409)
+        else:
+            cur.execute(
+                "INSERT INTO classes (subject, class_number, semester, school_year, professor) VALUES (%s, %s, %s, %s, %s)",
+                (subject, class_number, semester, school_year, professor),
+            )
+            mysql.connection.commit()
+            cur.execute(
+                "SELECT * FROM classes WHERE subject = %s AND class_number = %s",
+                (subject, class_number),
+            )
+            new_class = cur.fetchone()
+            res = response({"msg": "Class Created!", "class": new_class}, 201)
+            cur.close()
+    else:
+        res = response({"msg": "Fields Empty!"}, 422)
+
+    return res
 
 
 @app.route("/class", methods=["GET"])
@@ -290,71 +303,78 @@ def get_all_classes():
     cur.execute("SELECT * FROM classes")
     data = cur.fetchall()
     cur.close()
-    return response({"msg": "Success!", "classes": data})
+    return response({"classes": data})
 
 
-#! use path variables and json data #200
 @app.route("/class/<int:id>", methods=["PUT"])
 def update_class(id: int):
     try:
         request_data = request.get_json()
     except:
         request_data = None
-    res = None
-    id = request_data.get("id", None)
-    if id:
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM classes WHERE id = %s", (id))
-        class_ = cur.fetchone()
-        if not class_:
-            return response({"msg": "This class does not exist!"}, 400)
-    else:
-        res = response({"msg": "Fields Missing!"}, 400)
     subject = request_data.get("subject", None)
     class_number = request_data.get("class_number", None)
     semester = request_data.get("semester", None)
     school_year = request_data.get("school_year", None)
     professor = request_data.get("professor", None)
-    sql_prompt = "UPDATE classes SET"
-    if (
-        request_data
-        and (subject or class_number or semester or school_year or professor)
-        and id
-    ):
-        if subject:
-            sql_prompt += f' subject = "{subject}"'
-        if class_number:
-            sql_prompt += f" class_number = {class_number}"
-        if semester:
-            sql_prompt += f' semester = "{semester}"'
-        if school_year:
-            sql_prompt += f" school_year = {school_year}"
-        if professor:
-            sql_prompt += f' professor = "{professor}"'
-        sql_prompt += f" WHERE id = {id}"
-        cur.execute(sql_prompt)
-        cur.execute("SELECT * FROM classes WHERE id = %s", (id))
-        data = cur.fetchone
-        res = response({"msg": "Class Updated!", "classes": data})
+
+    cur = mysql.connection.cursor()
+
+    # check if class exists
+    cur.execute("SELECT * FROM classes WHERE id = %s", (id,))
+    class_ = cur.fetchone()
+    if not class_:
+        res = response({"msg": "Class Not Found!"}, 404)
     else:
-        res = response({"msg": "Fields Missing!"}, 400)
-    mysql.connection.commit()
+        if (
+            request_data
+            and subject
+            and class_number
+            and semester
+            and school_year
+            and professor
+        ):
+            # check for existing class with new info
+            cur.execute(
+                "SELECT * FROM classes WHERE subject = %s AND class_number = %s AND semester = %s AND school_year = %s AND professor = %s",
+                (subject, class_number, semester, school_year, professor),
+            )
+            data = cur.fetchone()
+            if data:
+                res = response(
+                    {"msg": "A class with that information already exists"}, 409
+                )
+            else:
+                cur.execute(
+                    "UPDATE classes SET subject = %s, class_number = %s, semester = %s, school_year = %s, professor = %s WHERE id = %s",
+                    (subject, class_number, semester, school_year, professor, id),
+                )
+                mysql.connection.commit()
+
+                cur.execute("SELECT * FROM classes WHERE id = %s", (id,))
+                updated_class = cur.fetchone()
+
+                res = response({"msg": "Class Updated!", "class": updated_class}, 200)
+        else:
+            res = response({"msg": "Fields Missing!"}, 400)
+
     cur.close()
     return res
 
 
 @app.route("/class/<int:id>", methods=["DELETE"])
 def delete_class(id: int):
-    res = None
     cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM classes WHERE id = %s", (id))
+
+    # check if class exists
+    cur.execute("SELECT * FROM classes WHERE id = %s", (id,))
     class_ = cur.fetchone()
     if not class_:
-        res = response({"msg": "This class does not exist!"}, 400)
+        res = response({"msg": "Class Not Found!"}, 404)
     else:
-        cur.execute("DELETE FROM classes WHERE id = %s", (id))
-        res = response({"msg": f"Class {id} was successfully deleted!"})
-    mysql.connection.commit()
+        cur.execute("DELETE FROM classes WHERE id = %s", (id,))
+        mysql.connection.commit()
+        res = response({"msg": "Class Deleted!", "class": class_}, 200)
     cur.close()
     return res
 
@@ -362,8 +382,6 @@ def delete_class(id: int):
 ###########################################
 # ? Search / Enroll / Drop
 ###########################################
-
-
 @app.route("/student/<string:email>/classes", methods=["GET"])
 def get_student_classes(email: str):
     cur = mysql.connection.cursor()
@@ -473,55 +491,61 @@ def class_drop(email: str, subject: str, class_number: str):
     return res
 
 
-#! this should use query params
-@app.route("/class/search", methods=["GET"])
-def class_search():
-    try:
-        request_data = request.get_json()
-    except:
-        request_data = None
-    email = None
-    name = None
-    grad_year = None
-    subject = None
-    class_number = None
-    semester = None
-    school_year = None
-    professor = None
-    sql_prompt = "SELECT * FROM students s JOIN enrollments e ON s.id = e.student_id JOIN classes c ON e.class_id = c.id"
-    #!! use like for partial matches
-    if request_data:
-        sql_prompt += " WHERE e.id = e.id"  #
-        email = request_data.get("email")
-        if email != None:
-            sql_prompt += f' AND s.email = "{email}"'
-        name = request_data.get("name")
-        if name != None:
-            sql_prompt += f' AND s.full_name = "{name}"'
-        grad_year = request_data.get("grad_year")
-        if grad_year != None:
-            sql_prompt += f" AND s.grad_year = {grad_year}"
-        subject = request_data.get("subject")
-        if subject != None:
-            sql_prompt += f' AND c.subject = "{subject}"'
-        class_number = request_data.get("class_number")
-        if class_number != None:
-            sql_prompt += f" AND c.class_number = {class_number}"
-        semester = request_data.get("semester")
-        if semester != None:
-            sql_prompt += f' AND c.semester = "{semester}"'
-        school_year = request_data.get("school_year")
-        if school_year != None:
-            sql_prompt += f" AND c.school_year = {school_year}"
-        professor = request_data.get("professor")
-        if professor != None:
-            sql_prompt += f' AND c.professor = "{professor}"'
-    cur = mysql.connection.cursor()
-    print(sql_prompt)
-    cur.execute(sql_prompt)
-    data = cur.fetchall()
-    cur.close()
-    return [] + list(data)
+# Using Query Arguments
+# A Query String resembles the following:
+# URL : example.com?arg1=value1&arg2=value
+# For each pair, the key is followed by an equals sign (=) character and then the value.
+# arg1 : value1
+# arg2 : value2
+# Query strings are useful for passing data that does not require the user to take action.
+# You could generate a query string somewhere in your app and append it to a URL so when a user makes a
+# request, the data is automatically passed for them. A query string can also be generated by forms that have
+# GET as the method.
+# Example: http://127.0.0.1:5000/query-example?language=Python
+# Here, language can be read by 2 ways:
+# ● request.args.get('language')
+# ● request.args['language']
+# By calling request.args.get('language'), the application will continue to run if the language key doesn’t exist
+# in the URL. In that case, the result of the method will be None.
+# By calling request.args['language'], the app will return a 400 error if the language key doesn’t exist in the
+# URL.
+# When dealing with query strings, it is recommended to use request.args.get() to prevent the app from failing.
+
+#! SELECT * FROM students s WHERE s.email LIKE '%@csu%'
+
+
+# #! this should use query params
+# @app.route("/student/search", methods=["GET"])
+# def student_search():
+
+#     sql_prompt = "SELECT * FROM students s JOIN enrollments e ON s.id = e.student_id JOIN classes c ON e.class_id = c.id"
+#     #!! use like for partial matches
+#     sql_prompt += " WHERE e.id = e.id"
+#     if request.args.get("email"):
+#         sql_prompt += f' AND s.email = "{email}"'
+#     if request.args.get("name"):
+#         sql_prompt += f' AND s.full_name = "{name}"'
+#     if request.args.get("grad_year"):
+#         sql_prompt += f" AND s.grad_year = {grad_year}"
+#     if request.args.get("subject"):
+#         sql_prompt += f' AND c.subject = "{subject}"'
+#     if request.args.get("class_number"):
+#         sql_prompt += f" AND c.class_number = {class_number}"
+#     if request.args.get("semester"):
+#         sql_prompt += f' AND c.semester = "{semester}"'
+#     if request.args.get("school_year"):
+#         sql_prompt += f" AND c.school_year = {school_year}"
+#     if request.args.get("professor"):
+#         sql_prompt += f' AND c.professor = "{professor}"'
+#     cur = mysql.connection.cursor()
+#     print(sql_prompt)
+#     cur.execute(sql_prompt)
+#     data = cur.fetchall(
+#     cur.close()
+#     return
+
+
+# def class_search():
 
 
 def main():
