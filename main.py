@@ -13,8 +13,8 @@ app = Flask(__name__)
 app.config["MYSQL_USER"] = "root"
 app.config["MYSQL_PASSWORD"] = "password"
 app.config["MYSQL_HOST"] = "127.0.0.1"
-app.config["MYSQL_PORT"] = # Fill out proper info
-app.config["MYSQL_DB"] = # Fill out proper info
+app.config["MYSQL_PORT"] = 3306
+app.config["MYSQL_DB"] = "cpsc_449"
 app.config["MYSQL_CURSORCLASS"] = "DictCursor"
 
 mysql = MySQL(app)
@@ -204,6 +204,7 @@ def update_student(email: str):
         res = response({"msg": "Student Not Found!"}, 404)
     else:
         sql_prompt = "UPDATE students SET"
+        sql_select = f'SELECT * FROM students WHERE email = "{email}"'
         potential_args = [
             {"sql": "full_name", "value": request_data.get("full_name", None)},
             {"sql": "grad_year", "value": request_data.get("grad_year", None)}
@@ -214,27 +215,31 @@ def update_student(email: str):
             if arg['value']:
                 if arg_count > 0:
                     sql_prompt += ","
+                sql_select += " AND"
                 arg_count += 1
                 temp = arg['value']
                 if type(arg['value']) is str:
                     temp = f'"{arg["value"]}"'
                 sql_prompt += f" {arg['sql']} = {temp}"
+                sql_select += f" {arg['sql']} = {temp}"
         
         sql_prompt += f' WHERE email = "{email}"'
 
         if arg_count > 0:
-            cur.execute(
-                sql_prompt
-            )
-            mysql.connection.commit()
+            cur.execute(sql_select)
+            data = cur.fetchone()
+            if data:
+                res = response({"msg": "No changes were made", "student": data})
+            else:
+                cur.execute(sql_prompt)
 
-            cur.execute("SELECT * FROM students WHERE email = %s", (email,))
-            updated_student = cur.fetchone()
+                cur.execute("SELECT * FROM students WHERE email = %s", (email,))
+                updated_student = cur.fetchone()
 
-            res = response({"msg": "Student Updated!", "student": updated_student}, 200)
+                res = response({"msg": "Student Updated!", "student": updated_student}, 200)
         else:
             res = response({"msg": "Fields Missing!"}, 400)
-
+    mysql.connection.commit()
     cur.close()
     return res
 
@@ -379,6 +384,8 @@ def update_class(id: int):
                 data = cur.fetchall()
                 print(data)
                 if data:
+                    mysql.connection.commit()
+                    cur.close()
                     return response(
                         {"msg": "A class with that information already exists"}, 409
                     )
