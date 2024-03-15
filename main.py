@@ -13,8 +13,8 @@ app = Flask(__name__)
 app.config["MYSQL_USER"] = "root"
 app.config["MYSQL_PASSWORD"] = "password"
 app.config["MYSQL_HOST"] = "127.0.0.1"
-app.config["MYSQL_PORT"] = 3307
-app.config["MYSQL_DB"] = "cpsc-449"
+app.config["MYSQL_PORT"] = # Fill out proper info
+app.config["MYSQL_DB"] = # Fill out proper info
 app.config["MYSQL_CURSORCLASS"] = "DictCursor"
 
 mysql = MySQL(app)
@@ -189,28 +189,42 @@ def get_students_by_enrollments_in_class(subject: str, class_number: str):
     return res
 
 
-#! Requires all
 @app.route("/student/<string:email>", methods=["PUT"])
 def update_student(email: str):
     try:
         request_data = request.get_json()
     except:
-        request_data = None
-    name = request_data.get("full_name", None)
-    grad_year = request_data.get("grad_year", None)
-
+        return response({"msg": "No data provided!"}, 400)
+    
     cur = mysql.connection.cursor()
-
-    #! Does not work without all parameters
     cur.execute("SELECT * FROM students WHERE email = %s", (email,))
     student = cur.fetchone()
+
     if not student:
         res = response({"msg": "Student Not Found!"}, 404)
     else:
-        if request_data and name and grad_year:
+        sql_prompt = "UPDATE students SET"
+        potential_args = [
+            {"sql": "full_name", "value": request_data.get("full_name", None)},
+            {"sql": "grad_year", "value": request_data.get("grad_year", None)}
+        ]
+
+        arg_count = 0
+        for arg in potential_args:
+            if arg['value']:
+                if arg_count > 0:
+                    sql_prompt += ","
+                arg_count += 1
+                temp = arg['value']
+                if type(arg['value']) is str:
+                    temp = f'"{arg["value"]}"'
+                sql_prompt += f" {arg['sql']} = {temp}"
+        
+        sql_prompt += f' WHERE email = "{email}"'
+
+        if arg_count > 0:
             cur.execute(
-                "UPDATE students SET full_name = %s, grad_year = %s WHERE email = %s",
-                (name, grad_year, email),
+                sql_prompt
             )
             mysql.connection.commit()
 
@@ -236,6 +250,10 @@ def delete_student(email: str):
     if not student:
         res = response({"msg": "Student Not Found!"}, 404)
     else:
+        # ! This is a quick fix
+        cur.execute("SELECT id FROM STUDENTS WHERE email + %s", (email,))
+        student_id = cur.fetchone()
+        cur.execute("DELETE FROM enrollments WHERE student_id = %s", (student_id,))
         cur.execute("DELETE FROM students WHERE email = %s", (email,))
         mysql.connection.commit()
         res = response({"msg": "Student Deleted!", "student": student}, 200)
@@ -308,59 +326,73 @@ def get_all_classes():
     return response({"classes": data})
 
 
-#! Does not work without all parameters
 @app.route("/class/<int:id>", methods=["PUT"])
 def update_class(id: int):
     try:
         request_data = request.get_json()
     except:
-        request_data = None
-    subject = request_data.get("subject", None)
-    class_number = request_data.get("class_number", None)
-    semester = request_data.get("semester", None)
-    school_year = request_data.get("school_year", None)
-    professor = request_data.get("professor", None)
+        return response({"msg: No Data Recieved!"}, 400)
 
     cur = mysql.connection.cursor()
 
-    # check if class exists
     cur.execute("SELECT * FROM classes WHERE id = %s", (id,))
     class_ = cur.fetchone()
+
     if not class_:
         res = response({"msg": "Class Not Found!"}, 404)
     else:
-        if (
-            request_data
-            and subject
-            and class_number
-            and semester
-            and school_year
-            and professor
-        ):
+        potential_args = [
+            {"sql": "subject", "value": request_data.get("subject", None)},
+            {"sql": "class_number", "value": request_data.get("class_number", None)},
+            {"sql": "semester", "value": request_data.get("semester", None)},
+            {"sql": "school_year", "value": request_data.get("school_year", None)},
+            {"sql": "professor", "value": request_data.get("professor", None)}
+        ]
+        arg_count = 0
+        sql_prompt = "UPDATE classes SET" 
+
+        for args in potential_args:
+            if args["value"]:
+                if arg_count > 0:
+                    sql_prompt += ","
+                arg_count += 1
+                temp = args['value']
+                if type(args["value"]) is str:
+                    temp = f'"{args["value"]}"'
+                sql_prompt += f" {args['sql']} = {temp}"
+        
+        sql_prompt += f" WHERE id = {id}"
+        
+        if(arg_count > 0):
             # check for existing class with new info
-            cur.execute(
-                "SELECT * FROM classes WHERE subject = %s AND class_number = %s AND semester = %s AND school_year = %s AND professor = %s",
-                (subject, class_number, semester, school_year, professor),
-            )
-            data = cur.fetchone()
-            if data:
-                res = response(
-                    {"msg": "A class with that information already exists"}, 409
-                )
-            else:
+            if(arg_count == len(potential_args)):
                 cur.execute(
-                    "UPDATE classes SET subject = %s, class_number = %s, semester = %s, school_year = %s, professor = %s WHERE id = %s",
-                    (subject, class_number, semester, school_year, professor, id),
+                    "SELECT * FROM classes WHERE subject = %s AND class_number = %s AND semester = %s AND school_year = %s AND professor = %s",
+                    (
+                        potential_args[0]["value"], 
+                        potential_args[1]["value"], 
+                        potential_args[2]["value"], 
+                        potential_args[3]["value"], 
+                        potential_args[4]["value"]
+                    )
                 )
-                mysql.connection.commit()
+                data = cur.fetchall()
+                print(data)
+                if data:
+                    return response(
+                        {"msg": "A class with that information already exists"}, 409
+                    )
+            
+            cur.execute(sql_prompt)
 
-                cur.execute("SELECT * FROM classes WHERE id = %s", (id,))
-                updated_class = cur.fetchone()
+            cur.execute("SELECT * FROM classes WHERE id = %s", (id,))
+            updated_class = cur.fetchone()
 
-                res = response({"msg": "Class Updated!", "class": updated_class}, 200)
+            res = response({"msg": "Class Updated!", "class": updated_class}, 200)
         else:
             res = response({"msg": "Fields Missing!"}, 400)
 
+    mysql.connection.commit()
     cur.close()
     return res
 
