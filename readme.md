@@ -1,13 +1,26 @@
 # About
 
-## Still need to do
+This project will act as a way to connect students (previous, current, or future) to track the classes they have taken.
+Students sign up with their school email.
+Students can register for existing or new classes and say the semester they have taken the class.
+You can add new classes to the database.
+Users may also search for other individuals who have taken / will take a given class; allowing them to network and collaborate with their peers.
 
-<!-- Implement the routing (endpoints) and dynamic URL (variable rules/path variables in endpoints) -->
-Implement the use case for url_for() and redirect() method
-<!-- use of HTTP methods based on the type of request sent -->
-<!-- use of request object and response object, header accessing, and sent headers in response back -->
-<!-- able to return various error codes according to the data sent and operation performed -->
-<!-- Implement the query parameters -->
-<!-- use of form data and JSON data -->
-<!-- connecting with database -->
-<!-- perform CRUD (CREATE, READ, UPDATE, and DELETE) operations on the database -->
+## Dependencies
+
+python==^3.11
+flask==^3.0.2
+flask-mysqldb==^2.0.0
+
+## How to run
+
+python main.py
+
+This runs the development server on localhost:5000
+
+This is not suitable for production use. For production use, use a production WSGI server like gunicorn or uWSGI.
+
+## Developers
+
+Francisco Ocegueda
+Nadeem Maida

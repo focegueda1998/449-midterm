@@ -1,4 +1,4 @@
-from flask import Flask, request, make_response
+from flask import Flask, request, make_response, redirect, url_for
 from flask_mysqldb import MySQL
 
 """
@@ -13,9 +13,11 @@ app = Flask(__name__)
 app.config["MYSQL_USER"] = "root"
 app.config["MYSQL_PASSWORD"] = "password"
 app.config["MYSQL_HOST"] = "127.0.0.1"
-app.config["MYSQL_PORT"] = 3306
-app.config["MYSQL_DB"] = "cpsc_449"
 app.config["MYSQL_CURSORCLASS"] = "DictCursor"
+# app.config["MYSQL_PORT"] = 3306
+# app.config["MYSQL_DB"] = "cpsc_449"
+app.config["MYSQL_PORT"] = 3307
+app.config["MYSQL_DB"] = "cpsc-449"
 
 mysql = MySQL(app)
 
@@ -36,12 +38,18 @@ def response(data, status_code=200):
     return response
 
 
+###########################################
+# ? DATABASE
+###########################################
 @app.route("/initialize-db", methods=["POST"])
 def initialize_db():
     cur = mysql.connection.cursor()
+    # ? drop tables if they exist
     cur.execute("DROP TABLE IF EXISTS enrollments")
     cur.execute("DROP TABLE IF EXISTS students")
     cur.execute("DROP TABLE IF EXISTS classes")
+
+    # ? create tables
     cur.execute(
         "CREATE TABLE students (id INT AUTO_INCREMENT PRIMARY KEY, email VARCHAR(255), full_name VARCHAR(255), grad_year INT)"
     )
@@ -51,6 +59,21 @@ def initialize_db():
     cur.execute(
         "CREATE TABLE enrollments (id INT AUTO_INCREMENT PRIMARY KEY, student_id INT, class_id INT)"
     )
+
+    # ? foreign key constraints
+    cur.execute(
+        "ALTER TABLE enrollments ADD CONSTRAINT fk_student_id FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE"
+    )
+    cur.execute(
+        "ALTER TABLE enrollments ADD CONSTRAINT fk_class_id FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE"
+    )
+
+    # ? unique constraints
+    cur.execute("ALTER TABLE students ADD CONSTRAINT unique_email UNIQUE (email)")
+    cur.execute(
+        "ALTER TABLE classes ADD CONSTRAINT unique_class UNIQUE (subject, class_number, semester, school_year, professor)"
+    )
+
     mysql.connection.commit()
     cur.close()
     return response({"msg": "Database Initialized!"})
@@ -97,6 +120,20 @@ def seed_db():
     mysql.connection.commit()
     cur.close()
     return response({"msg": "Database Seeded!"})
+
+
+###########################################
+# ? LOGIN
+###########################################
+# ! NOT IMPLEMENTED
+@app.route("/", methods=["GET"])
+def index():
+    return redirect(url_for("get_all_classes"))
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    return redirect(url_for("index"))
 
 
 ###########################################
@@ -195,7 +232,7 @@ def update_student(email: str):
         request_data = request.get_json()
     except:
         return response({"msg": "No data provided!"}, 400)
-    
+
     cur = mysql.connection.cursor()
     cur.execute("SELECT * FROM students WHERE email = %s", (email,))
     student = cur.fetchone()
@@ -207,22 +244,22 @@ def update_student(email: str):
         sql_select = f'SELECT * FROM students WHERE email = "{email}"'
         potential_args = [
             {"sql": "full_name", "value": request_data.get("full_name", None)},
-            {"sql": "grad_year", "value": request_data.get("grad_year", None)}
+            {"sql": "grad_year", "value": request_data.get("grad_year", None)},
         ]
 
         arg_count = 0
         for arg in potential_args:
-            if arg['value']:
+            if arg["value"]:
                 if arg_count > 0:
                     sql_prompt += ","
                 sql_select += " AND"
                 arg_count += 1
-                temp = arg['value']
-                if type(arg['value']) is str:
+                temp = arg["value"]
+                if type(arg["value"]) is str:
                     temp = f'"{arg["value"]}"'
                 sql_prompt += f" {arg['sql']} = {temp}"
                 sql_select += f" {arg['sql']} = {temp}"
-        
+
         sql_prompt += f' WHERE email = "{email}"'
 
         if arg_count > 0:
@@ -236,7 +273,9 @@ def update_student(email: str):
                 cur.execute("SELECT * FROM students WHERE email = %s", (email,))
                 updated_student = cur.fetchone()
 
-                res = response({"msg": "Student Updated!", "student": updated_student}, 200)
+                res = response(
+                    {"msg": "Student Updated!", "student": updated_student}, 200
+                )
         else:
             res = response({"msg": "Fields Missing!"}, 400)
     mysql.connection.commit()
@@ -244,7 +283,6 @@ def update_student(email: str):
     return res
 
 
-# ! Implement Cascading Deletes
 @app.route("/student/<string:email>", methods=["DELETE"])
 def delete_student(email: str):
     cur = mysql.connection.cursor()
@@ -255,10 +293,6 @@ def delete_student(email: str):
     if not student:
         res = response({"msg": "Student Not Found!"}, 404)
     else:
-        # ! This is a quick fix
-        cur.execute("SELECT id FROM STUDENTS WHERE email + %s", (email,))
-        student_id = cur.fetchone()
-        cur.execute("DELETE FROM enrollments WHERE student_id = %s", (student_id,))
         cur.execute("DELETE FROM students WHERE email = %s", (email,))
         mysql.connection.commit()
         res = response({"msg": "Student Deleted!", "student": student}, 200)
@@ -351,46 +385,31 @@ def update_class(id: int):
             {"sql": "class_number", "value": request_data.get("class_number", None)},
             {"sql": "semester", "value": request_data.get("semester", None)},
             {"sql": "school_year", "value": request_data.get("school_year", None)},
-            {"sql": "professor", "value": request_data.get("professor", None)}
+            {"sql": "professor", "value": request_data.get("professor", None)},
         ]
         arg_count = 0
-        sql_prompt = "UPDATE classes SET" 
+        sql_prompt = "UPDATE classes SET"
 
         for args in potential_args:
             if args["value"]:
                 if arg_count > 0:
                     sql_prompt += ","
                 arg_count += 1
-                temp = args['value']
+                temp = args["value"]
                 if type(args["value"]) is str:
                     temp = f'"{args["value"]}"'
                 sql_prompt += f" {args['sql']} = {temp}"
-        
+
         sql_prompt += f" WHERE id = {id}"
-        
-        if(arg_count > 0):
-            # check for existing class with new info
-            if(arg_count == len(potential_args)):
-                cur.execute(
-                    "SELECT * FROM classes WHERE subject = %s AND class_number = %s AND semester = %s AND school_year = %s AND professor = %s",
-                    (
-                        potential_args[0]["value"], 
-                        potential_args[1]["value"], 
-                        potential_args[2]["value"], 
-                        potential_args[3]["value"], 
-                        potential_args[4]["value"]
-                    )
+
+        if arg_count > 0:
+            try:
+                cur.execute(sql_prompt)
+            except:
+                cur.close()
+                return response(
+                    {"msg": "A class with that information already exists!"}, 400
                 )
-                data = cur.fetchall()
-                print(data)
-                if data:
-                    mysql.connection.commit()
-                    cur.close()
-                    return response(
-                        {"msg": "A class with that information already exists"}, 409
-                    )
-            
-            cur.execute(sql_prompt)
 
             cur.execute("SELECT * FROM classes WHERE id = %s", (id,))
             updated_class = cur.fetchone()
@@ -404,7 +423,6 @@ def update_class(id: int):
     return res
 
 
-# ! Need to delete each enrollment
 @app.route("/class/<int:id>", methods=["DELETE"])
 def delete_class(id: int):
     cur = mysql.connection.cursor()
@@ -416,8 +434,6 @@ def delete_class(id: int):
         res = response({"msg": "Class Not Found!"}, 404)
     else:
         cur.execute("DELETE FROM classes WHERE id = %s", (id,))
-        # ! Need to implement cascading deletes, this is a quick fix
-        cur.execute("DELETE FROM enrollments WHERE class_id = %s", (id,))
         mysql.connection.commit()
         res = response({"msg": "Class Deleted!", "class": class_}, 200)
     cur.close()
@@ -536,10 +552,9 @@ def class_drop(email: str, subject: str, class_number: str):
     return res
 
 
-#! THIS RETURNS DUPLICATE STUDENTS, NEED TO FIX THAT
 @app.route("/student/search", methods=["GET"])
 def student_search():
-    sql_prompt = "SELECT * FROM students s JOIN enrollments e ON s.id = e.student_id JOIN classes c ON e.class_id = c.id"
+    sql_prompt = "SELECT DISTINCT s.id, s.email, s.full_name, s.grad_year FROM students s JOIN enrollments e ON s.id = e.student_id JOIN classes c ON e.class_id = c.id"
     potential_args = [
         {"key": "email", "sql": "s.email", "value": None},
         {"key": "full_name", "sql": "s.full_name", "value": None},
@@ -568,8 +583,6 @@ def student_search():
 
         cur.execute(sql_prompt)
         result = cur.fetchall()
-        print("before")
-        print(result)
         result = [
             {
                 k: v
@@ -578,8 +591,6 @@ def student_search():
             }
             for row in result
         ]
-        print("after")
-        print(result)
         if result:
             res = response({"msg": "Query Successful!", "students": result})
         else:
@@ -591,52 +602,53 @@ def student_search():
     return res
 
 
-#! WORK IN PROGRESS
-# @app.route("/class/search", methods=["GET"])
-# def class_search():
-#     sql_prompt = "SELECT * FROM classes"
-#     potential_args = [
-#         {"key": "subject", "sql": "subject", "value": None},
-#         {"key": "class_number", "sql": "class_number", "value": None},
-#         {"key": "semester", "sql": "semester", "value": None},
-#         {"key": "school_year", "sql": "school_year", "value": None},
-#         {"key": "professor", "sql": "professor", "value": None},
-#     ]
-#     collected_args = []
-#     for arg in potential_args:
-#         value = request.args.get(arg["key"])
-#         if value is not None:
-#             arg["value"] = value
-#             collected_args.append(arg)
+@app.route("/class/search", methods=["GET"])
+def class_search():
+    sql_prompt = "SELECT * FROM classes"
+    potential_args = [
+        {"key": "subject", "sql": "subject", "value": None},
+        {"key": "class_number", "sql": "class_number", "value": None},
+        {"key": "semester", "sql": "semester", "value": None},
+        {"key": "school_year", "sql": "school_year", "value": None},
+        {"key": "professor", "sql": "professor", "value": None},
+    ]
+    collected_args = []
+    for arg in potential_args:
+        value = request.args.get(arg["key"])
+        if value is not None:
+            arg["value"] = value
+            collected_args.append(arg)
 
-#     cur = mysql.connection.cursor()
+    cur = mysql.connection.cursor()
 
-#     if len(collected_args) > 0:
-#         sql_prompt += " WHERE "
-#         for i, arg in enumerate(collected_args):
-#             if i > 0:
-#                 sql_prompt += " AND "
-#             sql_prompt += f"{arg['sql']} like '%{arg['value']}%'"
+    if len(collected_args) > 0:
+        sql_prompt += " WHERE "
+        for i, arg in enumerate(collected_args):
+            if i > 0:
+                sql_prompt += " AND "
+            sql_prompt += f"{arg['sql']} like '%{arg['value']}%'"
 
-#         cur.execute(sql_prompt)
-#         result = cur.fetchall()
-#         result = [
-#             {
-#                 k: v
-#                 for k, v in row.items()
-#                 if k in ["id", "subject", "class_number", "semester", "school_year", "professor"]
-#             }
-#             for row in result
-#         ]
-#         if result:
-#             res = response({"msg": "Query Successful!", "classes": result})
-#         else:
-#             res = response({"msg": "No Results Found!", "classes": []}, 404)
-#     else:
-#         res = response({"msg": "No Search Parameters Provided!"}, 400)
+        cur.execute(sql_prompt)
+        result = cur.fetchall()
+        if result:
+            res = response({"msg": "Query Successful!", "classes": result})
+        else:
+            res = response({"msg": "No Results Found!", "classes": []}, 404)
+    else:
+        res = response({"msg": "No Search Parameters Provided!"}, 400)
 
-#     cur.close()
-#     return res
+    cur.close()
+    return res
+
+
+###########################################
+# ? ERROR HANDLING
+###########################################
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return response({"msg": "Not Found!"}, 404)
 
 
 def main():

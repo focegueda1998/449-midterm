@@ -7,6 +7,40 @@
 	},
 	"item": [
 		{
+			"name": "Index",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{flask_url}}/",
+					"host": [
+						"{{flask_url}}"
+					],
+					"path": [
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "login",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{flask_url}}/login",
+					"host": [
+						"{{flask_url}}"
+					],
+					"path": [
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "initialize-db",
 			"request": {
 				"method": "POST",
@@ -388,6 +422,50 @@
 						{
 							"key": "semester",
 							"value": "FALL"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "class-search",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{flask_url}}/class/search?semester=FALL",
+					"host": [
+						"{{flask_url}}"
+					],
+					"path": [
+						"class",
+						"search"
+					],
+					"query": [
+						{
+							"key": "subject",
+							"value": "CPSC",
+							"disabled": true
+						},
+						{
+							"key": "class_number",
+							"value": "349",
+							"disabled": true
+						},
+						{
+							"key": "semester",
+							"value": "FALL"
+						},
+						{
+							"key": "school_year",
+							"value": "2022",
+							"disabled": true
+						},
+						{
+							"key": "professor",
+							"value": "Wang",
+							"disabled": true
 						}
 					]
 				}
